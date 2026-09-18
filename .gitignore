@@ -1,0 +1,22 @@
+# Local builds, downloaded dependencies, and device backups
+.build/
+build/
+.deps/
+backups/
+logs/
+*.bin
+*.elf
+*.map
+*.hex
+*.log
+*.o
+*.obj
+*.exe
+*.ppm
+
+# Editor and operating-system metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+__pycache__/

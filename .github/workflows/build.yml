@@ -1,0 +1,43 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gestures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Test gestures and touch decoding
+        run: |
+          mkdir -p .build
+          c++ -std=c++17 -Wall -Wextra -Werror tests/gestures_test.cpp -o .build/gestures_test
+          .build/gestures_test
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        debug: [0, 1]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: arduino/setup-arduino-cli@81d310742121c928ea9c8bbd407b4217b432ae02 # v2.0.0
+        with:
+          version: 1.5.1
+      - name: Install pinned dependencies
+        run: |
+          arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli core install m5stack:esp32@3.3.7 --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
+          arduino-cli lib install "M5GFX@0.2.26"
+      - name: Compile
+        run: >-
+          arduino-cli compile -b m5stack:esp32:m5stack_stopwatch
+          --build-path .build/firmware --warnings all
+          --build-property "compiler.cpp.extra_flags=-DSTOPWATCH_MOUSE_DEBUG=${{ matrix.debug }}"
+          stopwatch_mouse

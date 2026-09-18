@@ -2,9 +2,9 @@
 
 Turn an M5Stack StopWatch into a Bluetooth Low Energy mouse with a round touch trackpad, on-screen left/right buttons, and physical scroll buttons. It uses standard HID over GATT; the host does not need a companion application.
 
-![Trackpad interface](preview.png)
+https://github.com/user-attachments/assets/c00554d7-52b2-439e-8869-c3f416fab4d8
 
-*Internal framebuffer rendering, not a photograph of the physical display.*
+*M5StopWatch in action. [Original video](https://x.com/yeq6x/status/2100678941593985110).*
 
 ## Features
 

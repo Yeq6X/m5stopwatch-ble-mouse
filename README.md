@@ -9,7 +9,7 @@ Turn an M5Stack StopWatch into a Bluetooth Low Energy mouse with a round touch t
 ## Features
 
 - Relative pointer movement with fractional motion accumulation.
-- Tap to left-click; hold still for at least 0.5 seconds and release to right-click.
+- Tap to left-click after the double-tap window; hold still for at least 0.3 seconds and release to right-click.
 - Double-tap and keep the second touch down to left-drag.
 - Hold either on-screen button with one finger and move another finger on the trackpad to drag with that button.
 - Physical buttons for wheel scrolling, with repeat on hold.
@@ -76,16 +76,16 @@ Replace `<PORT>` with the port listed for your device. Uploading installs this a
 | Action | Gesture |
 | --- | --- |
 | Move pointer | Slide one finger on the lower trackpad |
-| Left-click | Tap and release within 0.5 seconds, or press/release the upper-left region |
-| Right-click | Hold still for at least 0.5 seconds and release, or press/release the upper-right region |
-| Double-click | Tap twice in the same area |
-| Left-drag with one finger | Tap, then touch again within 300 ms and keep that second touch down while moving; lift to release |
+| Left-click | Tap and release within 0.3 seconds, then wait 300 ms for the double-tap window; or press/release the upper-left region |
+| Right-click | Hold still for at least 0.3 seconds and release, or press/release the upper-right region |
+| Double-click | Tap twice in the same area within 300 ms; both clicks are sent after the second short tap is released |
+| Left-drag with one finger | Tap, then touch again within 300 ms; move or hold that second touch for 300 ms to start dragging, then lift to release |
 | Left/right drag with two fingers | Hold the corresponding upper button, move another finger on the lower trackpad; release the button finger to end the drag |
 | Scroll down | Press the yellow physical button (GPIO2) |
 | Scroll up | Press the blue physical button (GPIO1) |
 | Repeat scroll | Hold a physical button; repeat starts after 400 ms, then every 90 ms |
 
-A tap allows up to eight pixels of contact movement. Exceeding that distance cancels the release-click even if the finger returns to its starting position. The second touch of a double-tap must begin within 32 pixels of the first. Drag gestures suppress long-press right-clicks. Physical buttons remain scroll controls.
+A tap allows up to eight pixels of contact movement. Exceeding that distance cancels the release-click even if the finger returns to its starting position. The second touch of a double-tap must begin within 32 pixels of the first. The first tap remains pending during the 300 ms double-tap window, so a drag never starts with a completed single-click. A second tap that moves beyond the tolerance or stays down for 300 ms becomes a left-button hold. Two short taps generate two down/up pairs with a release interval between them. Drag gestures suppress long-press right-clicks. Physical buttons remain scroll controls.
 
 On iPhone/iPad, pointer access may require enabling AssistiveTouch in Accessibility → Touch. Host settings determine pointer speed, wheel direction, and the double-click timing recognized by applications.
 
@@ -104,7 +104,7 @@ The explicit commands work in normal builds. Disable touch tracing before captur
 ## Design
 
 - **Contact tracking:** up to two controller contact IDs are tracked independently. Each contact keeps the zone in which it began, so crossing the curved divider cannot change a pointer gesture into a button press. Contact record order does not determine pointer ownership.
-- **Gesture logic:** `MouseGestures.h`, `TouchFrame.h`, and `TouchMouse.h` are independent of Arduino and BLE. Timing is passed in explicitly for deterministic tests, including clock wraparound.
+- **Gesture logic:** `MouseGestures.h`, `ClickSequence.h`, `TouchFrame.h`, and `TouchMouse.h` are independent of Arduino and BLE. Timing is passed in explicitly for deterministic tests, including clock wraparound. Click pairs are emitted without blocking the input loop.
 - **Display:** M5GFX renders RGB565 canvases in PSRAM. ESP-IDF `spi_master` transfers changed rectangles over direct 20 MHz QSPI in DMA strips. Rendering is limited to one update per 40 ms.
 - **Board startup:** I2C runs at 100 kHz. IO-expander readiness requires a successful register read; startup retries include the board's wake delay. Display/touch reset follows confirmation of panel power. Charging-current configuration is preserved.
 - **HID identity:** the PnP vendor field stays at the reserved test value `0xffff`; the project does not claim another manufacturer's assigned identity. Advertising and diagnostic output use the same generated name.
@@ -122,7 +122,7 @@ Timing and geometry constants are in `MouseConfig.h`. Pointer sensitivity is in 
 
 ## Tests and CI
 
-Host tests cover click timing at 499/500 ms, movement cancellation, double-tap drag and release, both button drags, contact reordering, finger repositioning, invalid input recovery, touch decoding, and timer wraparound:
+Host tests cover the 299/300 ms long-press boundary, deferred single-clicks, double-click report edges, double-tap drag and release, movement cancellation, both button drags, contact reordering, finger repositioning, invalid input recovery, touch decoding, and timer wraparound:
 
 ```sh
 mkdir -p .build

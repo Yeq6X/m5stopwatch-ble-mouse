@@ -2,6 +2,7 @@
 #include "StopWatchHardware.h"
 #include "TrackpadUI.h"
 #include "MouseGestures.h"
+#include "ClickSequence.h"
 #include <BLEDevice.h>
 #include <BLEHIDDevice.h>
 #include <BLESecurity.h>
@@ -16,7 +17,7 @@ static uint8_t reportMap[] = {0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x01, 0x
                               0x95, 0x03, 0x75, 0x01, 0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81,
                               0x03, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x38, 0x15, 0x81,
                               0x25, 0x7F, 0x75, 0x08, 0x95, 0x03, 0x81, 0x06, 0xC0, 0xC0};
-static constexpr char kVersion[] = "1.0.0";
+static constexpr char kVersion[] = "1.0.1";
 static constexpr uint16_t kAdvertisingInterval = 0x20;  // 20 ms in 0.625 ms units.
 static std::atomic<bool> connected{false}, resetSession{false};
 static std::atomic<bool> encrypted{false}, subscribed{false}, retryReport{false};
@@ -29,8 +30,9 @@ static BLECharacteristic* mouseReport = nullptr;
 static StopWatchHardware hardware;
 static TrackpadUI trackpad(hardware);
 static MouseGestures gestures;
+static ClickSequence clicks;
 static uint8_t previousScroll = 0, lastButtons = 0, clickPulse = 0;
-static uint32_t nextScroll = 0, clickStarted = 0, lastUi = 0, lastBattery = 0;
+static uint32_t nextScroll = 0, lastUi = 0, lastBattery = 0;
 static bool requireRelease = true, touchTrace = false;
 
 class ServerCallbacks : public BLEServerCallbacks {
@@ -228,6 +230,7 @@ void loop() {
 
     if (resetSession.exchange(false)) {
         gestures.reset();
+        clicks.reset();
         lastButtons = clickPulse = previousScroll = 0;
         requireRelease = true;
         retryReport = false;
@@ -242,6 +245,7 @@ void loop() {
     MouseInput input;
     if (!ready) {
         gestures.reset();
+        clicks.reset();
         clickPulse = previousScroll = 0;
         requireRelease = true;
     } else if (requireRelease) {
@@ -252,15 +256,11 @@ void loop() {
         }
     } else {
         input = gestures.update(touch, now);
-        if (clickPulse &&
-            (uint32_t(now - clickStarted) >= kClickPulseMs || touch.count || !touch.valid)) {
-            clickPulse = 0;
-            sendReport(0);  // Preserve a release edge before a double-tap hold.
-        }
-        if (input.click) {
-            clickPulse = input.click;
-            clickStarted = now;
-        }
+        if (!touch.valid || input.buttons)
+            clicks.reset();
+        else if (input.click)
+            clicks.start(input.click, input.clickCount, now);
+        clickPulse = clicks.update(now);
         int8_t wheel = 0;
         if (physical != previousScroll) {
             if (physical == 1)

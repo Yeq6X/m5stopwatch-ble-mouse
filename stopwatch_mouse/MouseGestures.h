@@ -8,6 +8,7 @@ namespace stopwatch {
 struct MouseInput {
     uint8_t buttons = 0;
     uint8_t click = 0;
+    uint8_t clickCount = 1;
     int8_t dx = 0;
     int8_t dy = 0;
     bool pad = false;
@@ -39,8 +40,10 @@ class MouseGestures {
                 blocked_ = false;
             return out;
         }
-        if (tapPending_ && uint32_t(now - lastTapTime_) > kDoubleTapMs)
+        if (tapPending_ && uint32_t(now - lastTapTime_) > kDoubleTapMs) {
+            out.click = kLeftButton;
             tapPending_ = false;
+        }
 
         // Process releases before reusing slots; IDs survive controller record reordering.
         bool replacedContact = false;
@@ -48,14 +51,23 @@ class MouseGestures {
             if (!contact.active || findPoint(frame, contact.id))
                 continue;
             replacedContact = replacedContact || frame.count != 0;
-            if (!frame.count && contact.zone == Zone::Pad && !contact.moved && !contact.cancelTap &&
-                !contact.doubleHold) {
-                out.click =
-                    uint32_t(now - contact.started) >= kLongPressMs ? kRightButton : kLeftButton;
-                tapPending_ = out.click == kLeftButton;
-                lastTapTime_ = now;
-                lastTapX_ = contact.startX;
-                lastTapY_ = contact.startY;
+            if (!frame.count && contact.zone == Zone::Pad && !contact.moved && !contact.cancelTap) {
+                const uint32_t duration = now - contact.started;
+                if (contact.doubleHold) {
+                    // Only a released second tap confirms a double-click. A held/moved
+                    // second contact is a drag with no preceding click pair.
+                    if (!contact.doubleDragging && duration < kLongPressMs) {
+                        out.click = kLeftButton;
+                        out.clickCount = 2;
+                    }
+                } else if (duration >= kLongPressMs) {
+                    out.click = kRightButton;
+                } else {
+                    tapPending_ = true;
+                    lastTapTime_ = now;
+                    lastTapX_ = contact.startX;
+                    lastTapY_ = contact.startY;
+                }
             }
             contact.active = false;
         }
@@ -84,6 +96,8 @@ class MouseGestures {
                 contact->doubleHold = contact->zone == Zone::Pad && tapPending_ &&
                                       distanceSquared(point.x, point.y, lastTapX_, lastTapY_) <=
                                           kDoubleTapSlop * kDoubleTapSlop;
+                if (tapPending_ && !contact->doubleHold && contact->zone == Zone::Pad)
+                    out.click = kLeftButton;
                 tapPending_ = false;
             }
             contact->x = point.x;
@@ -100,6 +114,7 @@ class MouseGestures {
             for (auto& contact : contacts_) {
                 contact.cancelTap = true;
                 contact.doubleHold = false;
+                contact.doubleDragging = false;
             }
         }
 
@@ -115,7 +130,9 @@ class MouseGestures {
                 pad = &contact;
         }
         if (pad) {
-            if (pad->doubleHold)
+            if (pad->doubleHold && (pad->moved || uint32_t(now - pad->started) >= kLongPressMs))
+                pad->doubleDragging = true;
+            if (pad->doubleDragging)
                 out.buttons |= kLeftButton;
             if (pointerId_ != pad->id)
                 pointer_.reset();
@@ -142,7 +159,7 @@ class MouseGestures {
         Zone zone = Zone::Pad;
         uint32_t started = 0;
         int startX = 0, startY = 0, x = 0, y = 0;
-        bool moved = false, cancelTap = false, doubleHold = false;
+        bool moved = false, cancelTap = false, doubleHold = false, doubleDragging = false;
     };
     Contact contacts_[kMaxContacts]{};
     TouchMouse pointer_;

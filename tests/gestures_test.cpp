@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "../stopwatch_mouse/MouseGestures.h"
+#include "../stopwatch_mouse/ClickSequence.h"
 #include <cassert>
 #include <cstdio>
 #include <initializer_list>
@@ -18,15 +19,18 @@ static void testTapAndHold() {
     auto input = mouse.update(frame({{0, 200, 250}}), 0);
     assert(input.buttons == 0 && input.click == 0);
     assert(mouse.update(frame({{0, 201, 251}}), 100).dx == 0);
-    assert(mouse.update(frame({}), 150).click == kLeftButton);
-    assert(mouse.update(frame({}), 160).click == 0);
+    assert(mouse.update(frame({}), 150).click == 0);
+    assert(mouse.update(frame({}), 450).click == 0);
+    assert(mouse.update(frame({}), 451).click == kLeftButton);
+    assert(mouse.update(frame({}), 460).click == 0);
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), 1000);
-    assert(mouse.update(frame({}), 1499).click == kLeftButton);
+    assert(mouse.update(frame({}), 1299).click == 0);
+    assert(mouse.update(frame({}), 1600).click == kLeftButton);
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), 1000);
-    assert(mouse.update(frame({{0, 200, 250}}), 1500).click == 0);
-    assert(mouse.update(frame({}), 1500).click == kRightButton);
+    assert(mouse.update(frame({{0, 200, 250}}), 1300).click == 0);
+    assert(mouse.update(frame({}), 1300).click == kRightButton);
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), 1000);
     assert(mouse.update(frame({{0, 230, 250}}), 1100).dx > 0);
@@ -37,29 +41,56 @@ static void testTapAndHold() {
 static void testDoubleTapDrag() {
     MouseGestures mouse;
     mouse.update(frame({{0, 200, 250}}), 0);
-    assert(mouse.update(frame({}), 80).click == kLeftButton);
-    assert(mouse.update(frame({{1, 200, 250}}), 200).buttons == kLeftButton);
-    auto input = mouse.update(frame({{1, 230, 250}}), 700);
+    assert(mouse.update(frame({}), 80).click == 0);
+    auto input = mouse.update(frame({{1, 200, 250}}), 200);
+    assert(input.buttons == 0 && input.click == 0);
+    input = mouse.update(frame({{1, 230, 250}}), 220);
+    assert(input.buttons == kLeftButton && input.dx > 0 && input.click == 0);
+    input = mouse.update(frame({{1, 260, 250}}), 700);
     assert(input.buttons == kLeftButton && input.dx > 0 && input.click == 0);
     input = mouse.update(frame({}), 800);
     assert(input.buttons == 0 && input.click == 0);
 
-    // A quick second tap produces a second down/up pair without an extra release click.
+    // Two quick taps become two click pairs only after the second release.
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), 0);
     mouse.update(frame({}), 80);
-    assert(mouse.update(frame({{0, 200, 250}}), 200).buttons == kLeftButton);
+    input = mouse.update(frame({{0, 200, 250}}), 200);
+    assert(input.buttons == 0 && input.click == 0);
     input = mouse.update(frame({}), 240);
+    assert(input.buttons == 0 && input.click == kLeftButton && input.clickCount == 2);
+    assert(mouse.update(frame({}), 1000).click == 0);
+
+    // Holding the second tap for 300 ms enters a drag, never a right-click.
+    mouse.reset();
+    mouse.update(frame({{0, 200, 250}}), 0);
+    mouse.update(frame({}), 80);
+    mouse.update(frame({{0, 200, 250}}), 200);
+    assert(mouse.update(frame({{0, 200, 250}}), 499).buttons == 0);
+    input = mouse.update(frame({{0, 200, 250}}), 500);
+    assert(input.buttons == kLeftButton && input.click == 0);
+    input = mouse.update(frame({}), 600);
     assert(input.buttons == 0 && input.click == 0);
 
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), 0);
     mouse.update(frame({}), 80);
-    assert(mouse.update(frame({{0, 200, 250}}), 381).buttons == 0);
+    input = mouse.update(frame({{0, 200, 250}}), 381);
+    assert(input.buttons == 0 && input.click == kLeftButton);
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), 0);
     mouse.update(frame({}), 80);
-    assert(mouse.update(frame({{0, 300, 250}}), 200).buttons == 0);
+    input = mouse.update(frame({{0, 300, 250}}), 200);
+    assert(input.buttons == 0 && input.click == kLeftButton);
+
+    // A second touch at the inclusive deadline still cancels the pending single.
+    mouse.reset();
+    mouse.update(frame({{0, 200, 250}}), 0);
+    mouse.update(frame({}), 80);
+    input = mouse.update(frame({{0, 200, 250}}), 380);
+    assert(input.buttons == 0 && input.click == 0);
+    input = mouse.update(frame({{0, 220, 250}}), 390);
+    assert(input.buttons == kLeftButton && input.click == 0);
 }
 
 static void testButtonDrag(uint8_t button, int buttonX) {
@@ -103,14 +134,31 @@ static void testSafety() {
     assert(mouse.update(frame({{0, 200, 250}}), 400).buttons == 0);
     assert(mouse.update(frame({}), 500).click == 0);
     mouse.update(frame({{0, 200, 250}}), 600);
-    assert(mouse.update(frame({}), 650).click == kLeftButton);
+    assert(mouse.update(frame({}), 650).click == 0);
+    assert(mouse.update(frame({}), 951).click == kLeftButton);
     mouse.reset();
-    assert(mouse.update(frame({}), 700).click == 0);
+    assert(mouse.update(frame({}), 1000).click == 0);
 
-    // Millisecond wraparound preserves the half-second threshold.
+    // Millisecond wraparound preserves the 300 ms threshold and pending taps.
     mouse.reset();
     mouse.update(frame({{0, 200, 250}}), UINT32_MAX - 200);
-    assert(mouse.update(frame({}), 299).click == kRightButton);
+    assert(mouse.update(frame({}), 99).click == kRightButton);
+    mouse.reset();
+    mouse.update(frame({{0, 200, 250}}), UINT32_MAX - 200);
+    assert(mouse.update(frame({}), UINT32_MAX - 100).click == 0);
+    assert(mouse.update(frame({}), 199).click == 0);
+    assert(mouse.update(frame({}), 200).click == kLeftButton);
+
+    mouse.reset();
+    mouse.update(frame({{0, 200, 250}}), 0);
+    mouse.update(frame({}), 80);
+    mouse.update(invalid, 100);
+    assert(mouse.update(frame({}), 500).click == 0);
+    mouse.reset();
+    mouse.update(frame({{0, 200, 250}}), 0);
+    mouse.update(frame({}), 80);
+    mouse.reset();
+    assert(mouse.update(frame({}), 500).click == 0);
 
     // Two pad fingers must never synthesize a release click.
     mouse.reset();
@@ -141,6 +189,29 @@ static void testDecoder() {
     assert(decodeTouchFrame(bytes, sizeof(bytes)).count == 0);
 }
 
+static void testClickSequence() {
+    ClickSequence clicks;
+    clicks.start(kLeftButton, 2, 100);
+    assert(clicks.update(100) == kLeftButton);
+    assert(clicks.update(123) == kLeftButton);
+    assert(clicks.update(124) == 0);
+    assert(clicks.update(147) == 0);
+    assert(clicks.update(148) == kLeftButton);
+    assert(clicks.update(172) == 0);
+    assert(clicks.update(1000) == 0);
+    // Slow loops retain every down/up edge instead of skipping whole clicks.
+    clicks.start(kLeftButton, 2, 2000);
+    assert(clicks.update(2100) == 0);
+    assert(clicks.update(2200) == kLeftButton);
+    assert(clicks.update(2300) == 0);
+    clicks.start(kRightButton, 1, UINT32_MAX - 10);
+    assert(clicks.update(12) == kRightButton);
+    assert(clicks.update(13) == 0);
+    clicks.start(kLeftButton, 2, 100);
+    clicks.reset();
+    assert(clicks.update(200) == 0);
+}
+
 int main() {
     testTapAndHold();
     testDoubleTapDrag();
@@ -148,5 +219,6 @@ int main() {
     testButtonDrag(kRightButton, 350);
     testSafety();
     testDecoder();
+    testClickSequence();
     std::puts("Gesture and touch decoder tests passed.");
 }

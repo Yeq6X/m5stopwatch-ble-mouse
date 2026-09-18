@@ -10,26 +10,33 @@ permissions:
 
 jobs:
   gestures:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test gestures and touch decoding
         run: |
           mkdir -p .build
           c++ -std=c++17 -Wall -Wextra -Werror tests/gestures_test.cpp -o .build/gestures_test
           .build/gestures_test
   firmware:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         debug: [0, 1]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: arduino/setup-arduino-cli@81d310742121c928ea9c8bbd407b4217b432ae02 # v2.0.0
-        with:
-          version: 1.5.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Arduino CLI 1.5.1
+        run: |
+          mkdir -p "$RUNNER_TEMP/arduino-cli"
+          archive="$RUNNER_TEMP/arduino-cli.tar.gz"
+          curl --fail --location --retry 3 --max-time 180 \
+            https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Linux_64bit.tar.gz \
+            --output "$archive"
+          echo "28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP/arduino-cli" arduino-cli
+          echo "$RUNNER_TEMP/arduino-cli" >> "$GITHUB_PATH"
       - name: Install pinned dependencies
         run: |
           arduino-cli core update-index --additional-urls https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
